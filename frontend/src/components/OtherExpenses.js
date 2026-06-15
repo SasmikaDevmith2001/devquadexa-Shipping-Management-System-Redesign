@@ -1,0 +1,553 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { otherExpenseService } from '../api/services/otherExpenseService';
+import { formatDate } from '../utils/dateFormatter';
+import '../styles/OtherExpenses.css';
+
+// Predefined expense categories
+const EXPENSE_CATEGORIES = [
+  'Food & Beverages',
+  'Utility Bills',
+  'WiFi / Internet',
+  'Phone Cards',
+  'Office Supplies',
+  'Maintenance',
+  'Transportation',
+  'Other'
+];
+
+const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Cheque', 'Card'];
+
+// Get today's date in YYYY-MM-DD format
+const getTodayDate = () => {
+  const today = new Date();
+  return today.toISOString().split('T')[0];
+};
+
+function OtherExpenses() {
+  const { user } = useAuth();
+  const [expenses, setExpenses] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState(null);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [recordsPerPage, setRecordsPerPage] = useState(20);
+  const [expandedRow, setExpandedRow] = useState(null);
+
+  const [formData, setFormData] = useState({
+    category: '',
+    description: '',
+    amount: '',
+    expenseDate: getTodayDate(),
+    paymentMethod: '',
+    referenceNumber: '',
+    notes: ''
+  });
+
+  // Check if user has access to view the page
+  const hasAccess = () => {
+    return user && ['Admin', 'Super Admin', 'Manager', 'Staff'].includes(user.role);
+  };
+
+  // Check if user can create expenses
+  const canCreate = () => {
+    return user && ['Admin', 'Super Admin', 'Manager', 'Staff'].includes(user.role);
+  };
+
+  // Check if user can edit/delete expenses (only Admin and Super Admin)
+  const canEditDelete = () => {
+    return user && ['Admin', 'Super Admin'].includes(user.role);
+  };
+
+  // Format amount with commas
+  const formatAmount = (amount) => {
+    return parseFloat(amount || 0).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  };
+
+  useEffect(() => {
+    if (hasAccess()) {
+      fetchExpenses();
+    }
+  }, [user]);
+
+
+
+  const fetchExpenses = async () => {
+    try {
+      setLoading(true);
+      const data = await otherExpenseService.getAll();
+      setExpenses(data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching expenses:', error);
+      setMessage('Error loading expenses');
+      setMessageType('error');
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    try {
+      if (isEditing) {
+        await otherExpenseService.update(selectedExpense.expenseId, formData);
+        setMessage('Expense updated successfully!');
+      } else {
+        await otherExpenseService.create(formData);
+        setMessage('Expense created successfully!');
+      }
+      setMessageType('success');
+      resetForm();
+      await fetchExpenses();
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      console.error('Error saving expense:', error);
+      setMessage(error.response?.data?.message || 'Error saving expense');
+      setMessageType('error');
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  const handleEdit = (expense) => {
+    setSelectedExpense(expense);
+    setIsEditing(true);
+    setFormData({
+      category: expense.category,
+      description: expense.description,
+      amount: expense.amount,
+      expenseDate: expense.expenseDate ? expense.expenseDate.split('T')[0] : getTodayDate(),
+      paymentMethod: expense.paymentMethod || '',
+      referenceNumber: expense.referenceNumber || '',
+      notes: expense.notes || ''
+    });
+    setShowModal(true);
+  };
+
+  const handleDelete = async (expenseId) => {
+    if (!window.confirm('Are you sure you want to delete this expense?')) {
+      return;
+    }
+    try {
+      await otherExpenseService.delete(expenseId);
+      setMessage('Expense deleted successfully!');
+      setMessageType('success');
+      fetchExpenses();
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      setMessage('Error deleting expense');
+      setMessageType('error');
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      category: '',
+      description: '',
+      amount: '',
+      expenseDate: getTodayDate(),
+      paymentMethod: '',
+      referenceNumber: '',
+      notes: ''
+    });
+    setShowModal(false);
+    setIsEditing(false);
+    setSelectedExpense(null);
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const formatCurrency = (amount) => {
+    return `LKR ${parseFloat(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  // Filter expenses
+  const filteredExpenses = expenses.filter(expense => {
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch = 
+      expense.description.toLowerCase().includes(searchLower) ||
+      expense.category.toLowerCase().includes(searchLower) ||
+      expense.expenseId.toLowerCase().includes(searchLower) ||
+      (expense.recordedByName && expense.recordedByName.toLowerCase().includes(searchLower));
+    
+    const matchesCategory = categoryFilter === 'All' || expense.category === categoryFilter;
+    
+    return matchesSearch && matchesCategory;
+  }).sort((a, b) => new Date(b.expenseDate) - new Date(a.expenseDate));
+
+  // Pagination
+  const totalPages = Math.ceil(filteredExpenses.length / recordsPerPage);
+  const indexOfLastRecord = currentPage * recordsPerPage;
+  const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
+  const currentRecords = filteredExpenses.slice(indexOfFirstRecord, indexOfLastRecord);
+
+  // Calculate total
+  const totalAmount = filteredExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+
+  if (!hasAccess()) {
+    return (
+      <div className="other-expenses-page">
+        <div className="access-denied">
+          <h2>Access Denied</h2>
+          <p>You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="other-expenses-page">
+      <div className="page-header">
+        <div>
+          <h1>Other Expenses</h1>
+          <p>Track office expenses like food, utilities, WiFi, and phone cards</p>
+        </div>
+        {canCreate() && (
+          <button onClick={() => setShowModal(true)} className="btn btn-primary">
+            + New Expense
+          </button>
+        )}
+      </div>
+
+      {message && (
+        <div className={`alert ${messageType === 'error' ? 'alert-error' : 'alert-success'}`}>
+          {message}
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-header">
+          <h2>All Expenses ({filteredExpenses.length})</h2>
+          <div className="filters-container">
+            <div className="filter-group">
+              <select
+                id="categoryFilter"
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="filter-select"
+              >
+                <option value="All">All Categories</option>
+                {EXPENSE_CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+            <div className="search-box">
+              <input
+                type="text"
+                placeholder="Search by description, category, or ID..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="search-input"
+              />
+            </div>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="loading-state">Loading expenses...</div>
+        ) : filteredExpenses.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">💰</div>
+            <p>{searchTerm || categoryFilter !== 'All' ? 'No expenses found matching your filters' : 'No expenses recorded yet'}</p>
+          </div>
+        ) : (
+          <>
+            <div className="expenses-table-wrapper">
+              <table className="expenses-table">
+                <thead>
+                  <tr>
+                    <th>Expense ID</th>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Amount</th>
+                    <th>Payment Method</th>
+                    <th>Recorded By</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentRecords.map(expense => (
+                    <React.Fragment key={expense.expenseId}>
+                      <tr className={expandedRow === expense.expenseId ? 'expanded' : ''}>
+                        <td data-label="Expense ID">
+                          <strong className="expense-id">{expense.expenseId}</strong>
+                        </td>
+                        <td data-label="Date">{formatDate(expense.expenseDate)}</td>
+                        <td data-label="Category">
+                          <span className="category-badge">{expense.category}</span>
+                        </td>
+                        <td data-label="Description">{expense.description}</td>
+                        <td data-label="Amount" className="amount-cell">
+                          {formatCurrency(expense.amount)}
+                        </td>
+                        <td data-label="Payment Method">{expense.paymentMethod || '-'}</td>
+                        <td data-label="Recorded By">{expense.recordedByName || '-'}</td>
+                        <td data-label="Actions">
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            {canEditDelete() && (
+                              <button
+                                className="btn-action btn-edit"
+                                onClick={() => handleEdit(expense)}
+                                title="Edit Expense"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              className="btn-action btn-view"
+                              onClick={() => setExpandedRow(expandedRow === expense.expenseId ? null : expense.expenseId)}
+                              title="View Details"
+                            >
+                              {expandedRow === expense.expenseId ? 'Hide' : 'View'}
+                            </button>
+                            {canEditDelete() && (
+                              <button
+                                className="btn-action btn-delete"
+                                onClick={() => handleDelete(expense.expenseId)}
+                                title="Delete Expense"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {expandedRow === expense.expenseId && (
+                        <tr className="expanded-details">
+                          <td colSpan="8">
+                            <div className="details-grid">
+                              <div className="detail-section">
+                                <h4 className="section-title">Expense Details</h4>
+                                <div className="detail-item">
+                                  <span className="detail-label">Category:</span>
+                                  <span className="detail-value">{expense.category}</span>
+                                </div>
+                                <div className="detail-item">
+                                  <span className="detail-label">Date:</span>
+                                  <span className="detail-value">{formatDate(expense.expenseDate)}</span>
+                                </div>
+                                <div className="detail-item">
+                                  <span className="detail-label">Amount:</span>
+                                  <span className="detail-value">{formatCurrency(expense.amount)}</span>
+                                </div>
+                              </div>
+
+                              <div className="detail-section">
+                                <h4 className="section-title">Payment Information</h4>
+                                <div className="detail-item">
+                                  <span className="detail-label">Payment Method:</span>
+                                  <span className="detail-value">{expense.paymentMethod || '-'}</span>
+                                </div>
+                                {expense.referenceNumber && (
+                                  <div className="detail-item">
+                                    <span className="detail-label">Reference Number:</span>
+                                    <span className="detail-value">{expense.referenceNumber}</span>
+                                  </div>
+                                )}
+                                <div className="detail-item">
+                                  <span className="detail-label">Recorded By:</span>
+                                  <span className="detail-value">{expense.recordedByName || '-'}</span>
+                                </div>
+                              </div>
+
+                              <div className="detail-section">
+                                <h4 className="section-title">Description</h4>
+                                <div className="detail-item-block">
+                                  <span className="detail-value-block">{expense.description}</span>
+                                </div>
+                                {expense.notes && (
+                                  <>
+                                    <h4 className="section-title" style={{ marginTop: '0.75rem' }}>Notes</h4>
+                                    <div className="detail-item-block">
+                                      <span className="detail-value-block">{expense.notes}</span>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="pagination">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="pagination-btn"
+                >
+                  Previous
+                </button>
+                <span className="pagination-info">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="pagination-btn"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Modal */}
+      {showModal && (
+        <div className="modal-overlay">
+          <div className="modal modal-large">
+            <div className="modal-header">
+              <h2>{isEditing ? 'Edit Expense' : 'New Expense'}</h2>
+              <button className="btn-close" onClick={resetForm}>×</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="expense-form">
+              <div className="form-section">
+                <div className="form-group">
+                  <label>Category <span className="required">*</span></label>
+                  <select
+                    name="category"
+                    value={formData.category}
+                    onChange={handleChange}
+                    required
+                  >
+                    <option value="">Select Category</option>
+                    {EXPENSE_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Expense Date <span className="required">*</span></label>
+                  <input
+                    type="date"
+                    name="expenseDate"
+                    value={formData.expenseDate}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Description <span className="required">*</span></label>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  placeholder="Enter expense description"
+                  rows="3"
+                  required
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Amount (LKR) <span className="required">*</span></label>
+                  <input
+                    type="number"
+                    name="amount"
+                    value={formData.amount}
+                    onChange={handleChange}
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Payment Method</label>
+                  <select
+                    name="paymentMethod"
+                    value={formData.paymentMethod}
+                    onChange={handleChange}
+                  >
+                    <option value="">Select Method</option>
+                    {PAYMENT_METHODS.map(method => (
+                      <option key={method} value={method}>{method}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {formData.paymentMethod === 'Cheque' && (
+                <div className="form-group">
+                  <label>Cheque Number</label>
+                  <input
+                    type="text"
+                    name="referenceNumber"
+                    value={formData.referenceNumber}
+                    onChange={handleChange}
+                    placeholder="Enter cheque number"
+                  />
+                </div>
+              )}
+              {formData.paymentMethod !== 'Cheque' && formData.paymentMethod && (
+                <div className="form-group">
+                  <label>Reference Number</label>
+                  <input
+                    type="text"
+                    name="referenceNumber"
+                    value={formData.referenceNumber}
+                    onChange={handleChange}
+                    placeholder="Transaction ID, reference number, etc."
+                  />
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Notes</label>
+                <textarea
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleChange}
+                  placeholder="Additional notes (optional)"
+                  rows="2"
+                />
+              </div>
+
+              <div className="form-actions">
+                <button type="button" onClick={resetForm} className="btn btn-secondary">
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                >
+                  {isEditing ? 'Update Expense' : 'Create Expense'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default OtherExpenses;
