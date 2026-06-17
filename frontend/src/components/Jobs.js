@@ -7,6 +7,7 @@ import { transporterService } from '../api/services/transporterService';
 import apiClient from '../api/client';
 import OfficePayItems from './OfficePayItems';
 import AdvancePayment from './AdvancePayment';
+import JobPettyCash from './JobPettyCash';
 import Pagination from './Pagination';
 
 function Jobs() {
@@ -768,6 +769,15 @@ function Jobs() {
                         <div className="mt-8 pt-6 border-t border-gray-200">
                           <AdvancePayment 
                             job={job} 
+                            onUpdate={fetchJobs}
+                          />
+                        </div>
+                        
+                        {/* Petty Cash Section */}
+                        <div className="mt-8 pt-6 border-t border-gray-200">
+                          <JobPettyCash
+                            job={job}
+                            users={users}
                             onUpdate={fetchJobs}
                           />
                         </div>

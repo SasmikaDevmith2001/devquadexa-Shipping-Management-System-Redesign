@@ -10,8 +10,7 @@ import apiClient from '../api/client';
 import Pagination from './Pagination';
 import ReviewInvoiceModal from './ReviewInvoiceModal';
 import { formatDate, formatDateWithMonth, formatDateWithFullMonth } from '../utils/dateFormatter';
-import '../styles/Billing.css';
-import '../styles/InvoicePaymentTracking.css';
+
 
 function Billing() {
   const { user } = useAuth();
@@ -490,7 +489,7 @@ function Billing() {
         mergedPayItems = ensureFclTransporterCost(mergedPayItems, job.shipmentCategory);
         setSelectedJob({ ...job, payItems: mergedPayItems });
         setShowPayItemsRow(false);
-        setMessage(`?? Job has ${mergedPayItems.length} pay items. Use "+ Add More Items" to add additional items.`);
+        setMessage(`✅ Job has ${mergedPayItems.length} pay items. Use "+ Add More Items" to add additional items.`);
         setTimeout(() => setMessage(''), 5000);
       } else if (allPayItems.length > 0) {
         const payItemsWithFclItem = ensureFclTransporterCost(allPayItems, job.shipmentCategory);
@@ -499,7 +498,7 @@ function Billing() {
         
         const officeItemsCount = allPayItems.filter(item => item.isOfficePayItem).length;
         const pettyCashItemsCount = allPayItems.filter(item => item.isPettyCashItem).length;
-        let message = `? Loaded ${allPayItems.length} items: `;
+        let message = `✅ Loaded ${allPayItems.length} items: `;
         if (officeItemsCount > 0) message += `${officeItemsCount} office payments`;
         if (pettyCashItemsCount > 0) {
           if (officeItemsCount > 0) message += `, `;
@@ -744,9 +743,9 @@ function Billing() {
       const totalCount = finalPayItemsData.length;
       
       if (isAddingToExisting) {
-        setMessage(`? Added ${addedCount} new pay item(s) successfully! Total: ${totalCount} items. Review below and generate invoice.`);
+        setMessage(`✅ Added ${addedCount} new pay item(s) successfully! Total: ${totalCount} items. Review below and generate invoice.`);
       } else {
-        setMessage(`? ${addedCount} pay item(s) saved successfully! Review the details below and generate invoice.`);
+        setMessage(`✅ ${addedCount} pay item(s) saved successfully! Review the details below and generate invoice.`);
       }
       
       setShowPayItemsRow(false);
@@ -895,7 +894,7 @@ function Billing() {
   // Start inline editing for a pay item
   const startEditingPayItem = (index) => {
     if (!canEditPayItems()) {
-      setMessage('? Only Super Admin, Admin, and Manager users can edit pay items. Please contact an administrator for changes.');
+      setMessage('⚠️ Only Super Admin, Admin, and Manager users can edit pay items. Please contact an administrator for changes.');
       setTimeout(() => setMessage(''), 5000);
       return;
     }
@@ -917,7 +916,7 @@ function Billing() {
     
     const newBillingAmount = parseFloat(editingBillingAmount);
     if (isNaN(newBillingAmount) || newBillingAmount < 0) {
-      setMessage('? Please enter a valid billing amount');
+      setMessage('❌ Please enter a valid billing amount');
       setTimeout(() => setMessage(''), 3000);
       return;
     }
@@ -939,13 +938,13 @@ function Billing() {
         payItems: updatedPayItems
       });
 
-      setMessage('? Pay item billing amount updated successfully');
+      setMessage('✅ Pay item billing amount updated successfully');
       setEditingPayItemIndex(null);
       setEditingBillingAmount('');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
       console.error('Error updating pay item:', error);
-      setMessage('? Error updating pay item. Please try again.');
+      setMessage('❌ Error updating pay item. Please try again.');
       setTimeout(() => setMessage(''), 3000);
     }
   };
@@ -953,7 +952,7 @@ function Billing() {
   // Remove a pay item
   const removePayItem = async (index) => {
     if (!canEditPayItems()) {
-      setMessage('? Only Super Admin, Admin, and Manager users can remove pay items. Please contact an administrator for changes.');
+      setMessage('⚠️ Only Super Admin, Admin, and Manager users can remove pay items. Please contact an administrator for changes.');
       setTimeout(() => setMessage(''), 5000);
       return;
     }
@@ -978,11 +977,11 @@ function Billing() {
         payItems: updatedPayItems
       });
 
-      setMessage('? Pay item removed successfully');
+      setMessage('✅ Pay item removed successfully');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
       console.error('Error removing pay item:', error);
-      setMessage('? Error removing pay item. Please try again.');
+      setMessage('❌ Error removing pay item. Please try again.');
       setTimeout(() => setMessage(''), 3000);
     }
   };
@@ -1085,7 +1084,15 @@ function Billing() {
       };
       console.log('generateBill - sending billData:', billData);
       
-      await billingService.createBill(billData);
+      const result = await billingService.createBill(billData);
+      
+      // Check if bill generation was blocked (paid/partially paid)
+      if (result.blocked) {
+        setMessage(`Cannot generate invoice: This job already has an invoice that is ${result.paymentStatus.toLowerCase()}. No changes were made.`);
+        setTimeout(() => setMessage(''), 7000);
+        console.log('=== GENERATE BILL BLOCKED ===', result.message);
+        return;
+      }
       
       // Update petty cash assignment status to Closed via direct API call (safety net)
       try {
@@ -1253,13 +1260,13 @@ function Billing() {
                        0;
       
       if (!amount || amount <= 0) {
-        setMessage('? Please enter a valid payment amount');
+        setMessage('❌ Please enter a valid payment amount');
         setTimeout(() => setMessage(''), 5000);
         return;
       }
       
       if (amount > remaining + 0.01) { // 0.01 tolerance for floating point
-        setMessage(`? Payment amount (LKR ${formatAmount(amount)}) exceeds remaining balance (LKR ${formatAmount(remaining)})`);
+        setMessage(`❌ Payment amount (LKR ${formatAmount(amount)}) exceeds remaining balance (LKR ${formatAmount(remaining)})`);
         setTimeout(() => setMessage(''), 5000);
         return;
       }
@@ -1268,14 +1275,14 @@ function Billing() {
     // Validate based on payment method
     if (paymentMethod === 'Cheque') {
       if (!chequeNumber || !chequeDate || !chequeAmount) {
-        setMessage('? Please fill in all cheque details (Number, Date, Amount)');
+        setMessage('❌ Please fill in all cheque details (Number, Date, Amount)');
         setTimeout(() => setMessage(''), 5000);
         return;
       }
       
       const amount = parseFloat(chequeAmount);
       if (isNaN(amount) || amount <= 0) {
-        setMessage('? Please enter a valid cheque amount');
+        setMessage('❌ Please enter a valid cheque amount');
         setTimeout(() => setMessage(''), 5000);
         return;
       }
@@ -1283,7 +1290,7 @@ function Billing() {
     
     if (paymentMethod === 'Bank Transfer') {
       if (!bankName) {
-        setMessage('? Please select a bank');
+        setMessage('❌ Please select a bank');
         setTimeout(() => setMessage(''), 5000);
         return;
       }
@@ -1313,11 +1320,11 @@ function Billing() {
         const newRemaining = (parseFloat(selectedBillForPayment.remainingAmount || selectedBillForPayment.netTotal) - parseFloat(partialPaymentAmount));
         const newStatus = newRemaining <= 0.01 ? 'Paid' : 'Partially Paid';
         
-        setMessage(`? Partial payment of LKR ${formatAmount(partialPaymentAmount)} recorded successfully. Invoice status: ${newStatus}`);
+        setMessage(`✅ Partial payment of LKR ${formatAmount(partialPaymentAmount)} recorded successfully. Invoice status: ${newStatus}`);
       } else {
         // Call full payment endpoint
         await billingService.markAsPaid(selectedBillForPayment.billId, paymentDetails);
-        setMessage(`? Invoice ${selectedBillForPayment.invoiceNumber || selectedBillForPayment.billId} marked as paid via ${paymentMethod}`);
+        setMessage(`✅ Invoice ${selectedBillForPayment.invoiceNumber || selectedBillForPayment.billId} marked as paid via ${paymentMethod}`);
       }
       
       setShowPaymentModal(false);
@@ -1326,7 +1333,7 @@ function Billing() {
       setTimeout(() => setMessage(''), 5000);
     } catch (error) {
       console.error('Error marking bill as paid:', error);
-      setMessage(`? Error: ${error.response?.data?.message || error.message}`);
+      setMessage(`❌ Error: ${error.response?.data?.message || error.message}`);
       setTimeout(() => setMessage(''), 5000);
     }
   };
@@ -2118,9 +2125,9 @@ function Billing() {
                   <div className="invoice-payment-table-cell invoice-payment-date-col">{formatDateWithMonth(bill.paidDate)}</div>
                   <div className="invoice-payment-table-cell invoice-payment-method-col">
                     <span className={`invoice-payment-method-badge invoice-payment-method-${bill.paymentMethod?.toLowerCase().replace(' ', '-')}`}>
-                      {bill.paymentMethod === 'Cash' && '??'}
-                      {bill.paymentMethod === 'Cheque' && '??'}
-                      {bill.paymentMethod === 'Bank Transfer' && '??'}
+                      {bill.paymentMethod === 'Cash' && '💵'}
+                      {bill.paymentMethod === 'Cheque' && '📄'}
+                      {bill.paymentMethod === 'Bank Transfer' && '🏦'}
                       {' '}{bill.paymentMethod || '-'}
                     </span>
                   </div>
@@ -2238,15 +2245,6 @@ function Billing() {
                   </option>
                 ))}
               </select>
-              {selectedJob && (
-                <button 
-                  onClick={() => setShowJobInfoModal(true)}
-                  className="px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg font-semibold transition"
-                  title="View Job Information"
-                >
-                  â„¹ï¸
-                </button>
-              )}
             </div>
             {loadingSettlement && (
               <div className="mt-2 text-sm text-blue-700 italic">
@@ -2330,7 +2328,7 @@ function Billing() {
                          <span className="text-red-600">*Required</span>}
                       </span>
                       <select 
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                        className="max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                         value={transporters.find(t => t.name === selectedJob.transporter)?.transporterId || ''}
                         onChange={(e) => handleTransporterChange(e.target.value)}
                       >
@@ -3276,7 +3274,7 @@ function Billing() {
               }}
               title={showOldInvoices ? 'Collapse' : 'Expand'}
             >
-              {showOldInvoices ? '?' : '?'}
+              {showOldInvoices ? '▲' : '▼'}
             </button>
             <h2>Old Invoice Management ({oldInvoices.length})</h2>
             {user && (user.role === 'Admin' || user.role === 'Super Admin' || user.role === 'Manager' || user.role === 'Office Executive') && (
@@ -3550,9 +3548,9 @@ function Billing() {
                                             </div>
                                             <div className="invoice-payment-table-cell payment-method-col">
                                               <span className={`payment-method-badge payment-method-${payment.paymentMethod?.toLowerCase().replace(' ', '-')}`}>
-                                                {payment.paymentMethod === 'Cash' && '??'}
-                                                {payment.paymentMethod === 'Cheque' && '??'}
-                                                {payment.paymentMethod === 'Bank Transfer' && '??'}
+                                                {payment.paymentMethod === 'Cash' && '💵'}
+                                                {payment.paymentMethod === 'Cheque' && '📄'}
+                                                {payment.paymentMethod === 'Bank Transfer' && '🏦'}
                                                 {' '}{payment.paymentMethod || '-'}
                                               </span>
                                             </div>
